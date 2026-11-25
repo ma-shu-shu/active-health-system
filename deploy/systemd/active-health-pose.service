@@ -1,0 +1,20 @@
+[Unit]
+Description=Active Health RTMPose
+After=network.target
+
+[Service]
+Type=simple
+User=activehealth
+Group=activehealth
+WorkingDirectory=/srv/active-health/current/ai_services/pose
+EnvironmentFile=/etc/active-health/active-health.env
+ExecStart=/srv/active-health/current/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8101
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,70 @@
+# Requires Caddy 2.10+ for the request_body directive.
+# Values may be supplied through /etc/caddy/active-health.env.
+{$APP_DOMAIN:health.example.com} {
+    encode zstd gzip
+
+    log {
+        output stdout
+        format json
+    }
+
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+        Permissions-Policy "camera=(self), microphone=()"
+        -Server
+    }
+
+    @versioned_assets path /assets/*
+    header @versioned_assets Cache-Control "public, max-age=31536000, immutable"
+
+    @app_shell path / /index.html /sw.js /manifest.webmanifest
+    header @app_shell Cache-Control "no-cache"
+
+    # The backend enforces an exact 100 MiB video-file limit. The small extra
+    # allowance here covers multipart headers without rejecting a valid file.
+    @video_upload {
+        method POST
+        path /api/pose/infer-video-upload
+    }
+    request_body @video_upload {
+        max_size 101MiB
+    }
+
+    @api path /api /api/*
+    handle @api {
+        uri strip_prefix /api
+        reverse_proxy {$API_UPSTREAM:127.0.0.1:8000} {
+            header_down Cache-Control "no-store"
+            transport http {
+                dial_timeout 10s
+                response_header_timeout 15m
+                read_timeout 15m
+                write_timeout 15m
+            }
+        }
+    }
+
+    # Uploaded media is never served as a public static directory. FastAPI
+    # validates the login cookie and restricts the path to the current user.
+    @uploads path /uploads /uploads/*
+    handle @uploads {
+        reverse_proxy {$API_UPSTREAM:127.0.0.1:8000} {
+            header_down Cache-Control "private, no-store"
+            transport http {
+                dial_timeout 10s
+                response_header_timeout 15m
+                read_timeout 15m
+                write_timeout 15m
+            }
+        }
+    }
+
+    # Vue history-mode routes fall back to index.html; real static assets are
+    # still served directly when they exist.
+    handle {
+        root * {$FRONTEND_ROOT:/srv/active-health/current/frontend/dist}
+        try_files {path} /index.html
+        file_server
+    }
+}

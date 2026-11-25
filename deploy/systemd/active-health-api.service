@@ -1,0 +1,21 @@
+[Unit]
+Description=Active Health FastAPI
+After=network.target active-health-pose.service
+Wants=active-health-pose.service
+
+[Service]
+Type=simple
+User=activehealth
+Group=activehealth
+WorkingDirectory=/srv/active-health/current/backend
+EnvironmentFile=/etc/active-health/active-health.env
+ExecStart=/srv/active-health/current/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target
