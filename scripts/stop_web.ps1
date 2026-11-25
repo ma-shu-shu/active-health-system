@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 $PidDir = Join-Path $Root "runtime_logs\web_pids"
 
@@ -11,9 +11,14 @@ foreach ($name in @("frontend", "backend", "pose")) {
         continue
     }
 
-    $savedPid = (Get-Content $pidFile | Select-Object -First 1) -as [int]
+    $saved = @(Get-Content $pidFile)
+    $savedPid = $saved[0] -as [int]
     $process = if ($savedPid) { Get-Process -Id $savedPid -ErrorAction SilentlyContinue } else { $null }
     if ($process) {
+        if ($saved.Count -lt 2 -or $process.StartTime.ToUniversalTime().Ticks -ne [long]$saved[1]) {
+            Write-Host "$name：记录不匹配，未结束该进程" -ForegroundColor Yellow
+            continue
+        }
         Stop-Process -Id $savedPid -Force
         Write-Host "$name：已关闭" -ForegroundColor Green
     }

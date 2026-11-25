@@ -1,4 +1,4 @@
-param(
+﻿param(
     [switch]$NoBrowser
 )
 
@@ -47,7 +47,16 @@ function Save-PortOwner {
     $owner = Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue |
         Select-Object -First 1 -ExpandProperty OwningProcess
     if ($owner) {
-        Set-Content -Encoding ascii -Path (Join-Path $PidDir "$Name.pid") -Value $owner
+        $process = Get-Process -Id $owner -ErrorAction Stop
+        Set-Content -Encoding ascii -Path (Join-Path $PidDir "$Name.pid") -Value @($owner, $process.StartTime.ToUniversalTime().Ticks)
+    }
+}
+
+foreach ($port in @(8101, 8000, 5173)) {
+    $owner = Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue |
+        Select-Object -First 1 -ExpandProperty OwningProcess
+    if ($owner) {
+        throw "端口 $port 已被进程 $owner 使用。请先停止对应服务，不会接管该进程。"
     }
 }
 
@@ -148,8 +157,8 @@ if (Test-HttpReady "http://127.0.0.1:5173") {
 }
 else {
     Write-Host "[5/5] 启动前端..."
-    Start-Process -FilePath "npm.cmd" `
-        -ArgumentList @("run", "dev", "--", "--host", "127.0.0.1") `
+    Start-Process -FilePath "node.exe" `
+        -ArgumentList @("node_modules/vite/bin/vite.js", "--host", "127.0.0.1") `
         -WorkingDirectory $Frontend `
         -RedirectStandardOutput (Join-Path $Runtime "frontend.out.log") `
         -RedirectStandardError (Join-Path $Runtime "frontend.err.log") `

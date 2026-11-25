@@ -19,6 +19,7 @@ $RuntimeRoot = Join-Path $ProjectRoot "runtime_logs\mobile_https"
 $StateFile = Join-Path $RuntimeRoot "services.json"
 $UrlFile = Join-Path $RuntimeRoot "current_url.txt"
 $LauncherLog = Join-Path $RuntimeRoot "launcher.log"
+$RunLogDir = Join-Path $RuntimeRoot ("run-" + (Get-Date -Format "yyyyMMdd-HHmmss") + "-" + $PID)
 $script:StartedProcesses = @()
 
 New-Item -ItemType Directory -Force -Path $RuntimeRoot | Out-Null
@@ -81,8 +82,8 @@ function Start-TrackedProcess {
     $process = Start-Process -FilePath $FilePath `
         -ArgumentList $ArgumentList `
         -WorkingDirectory $WorkingDirectory `
-        -RedirectStandardOutput (Join-Path $RuntimeRoot "$LogPrefix.out.log") `
-        -RedirectStandardError (Join-Path $RuntimeRoot "$LogPrefix.err.log") `
+        -RedirectStandardOutput (Join-Path $RunLogDir "$LogPrefix.out.log") `
+        -RedirectStandardError (Join-Path $RunLogDir "$LogPrefix.err.log") `
         -WindowStyle Hidden `
         -PassThru
     $script:StartedProcesses += [ordered]@{
@@ -99,7 +100,7 @@ function Stop-StartedProcesses {
     [array]::Reverse($items)
     foreach ($item in $items) {
         $process = Get-Process -Id $item.id -ErrorAction SilentlyContinue
-        if ($process) {
+        if ($process -and $process.StartTime.ToUniversalTime().Ticks -eq [long]$item.start_time_utc_ticks) {
             Stop-Process -Id $item.id -Force -ErrorAction SilentlyContinue
         }
     }
@@ -137,19 +138,40 @@ Write-Host "=== 主动健康系统：手机 HTTPS 一键启动 ===" -ForegroundC
 
 $existing = Get-ExistingState
 if ($existing) {
-    $live = @($existing.processes | Where-Object {
-        Get-Process -Id $_.id -ErrorAction SilentlyContinue
+    $valid = @($existing.processes | Where-Object {
+        $candidate = Get-Process -Id $_.id -ErrorAction SilentlyContinue
+        $candidate -and $candidate.StartTime.ToUniversalTime().Ticks -eq [long]$_.start_time_utc_ticks
     })
-    if ($live.Count -gt 0) {
-        Write-Host "服务已经由一键脚本启动，无需重复启动。" -ForegroundColor Yellow
-        if ($existing.tunnel_url) {
-            Write-Host "手机地址：$($existing.tunnel_url)" -ForegroundColor Green
+    $names = @($valid | ForEach-Object { $_.name })
+    $healthy = $valid.Count -eq 4 -and ($names -contains 'RTMPose') -and
+        ($names -contains 'Caddy') -and ($names -contains 'cloudflared') -and
+        ($names -contains 'FastAPI')
+    $healthy = $healthy -and (Test-HttpReady 'http://127.0.0.1:8101/estimator') -and
+        (Test-HttpReady 'http://127.0.0.1:8080') -and (Test-HttpReady 'http://127.0.0.1:8000/health')
+    if ($healthy -and $existing.tunnel_url) {
+        try {
+            $check = Invoke-RestMethod -Uri "$($existing.tunnel_url)/api/health" -TimeoutSec 6
+            $healthy = $check.status -eq 'ok'
         }
+        catch { $healthy = $false }
+    }
+    else { $healthy = $false }
+    if ($healthy) {
+        Write-Host "服务仍在运行，公网健康检查已通过。" -ForegroundColor Green
+        Write-Host "电脑和手机地址：$($existing.tunnel_url)"
         exit 0
+    }
+    if ($valid.Count -gt 0) {
+        Write-Host "旧隧道已失效，正在停止上次由本脚本启动的服务..." -ForegroundColor Yellow
+        [array]::Reverse($valid)
+        foreach ($item in $valid) {
+            Stop-Process -Id $item.id -Force -ErrorAction SilentlyContinue
+        }
     }
 }
 
 Remove-Item -LiteralPath $StateFile, $UrlFile -Force -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force -Path $RunLogDir | Out-Null
 
 Assert-File -Path $Python -Hint "请先创建项目虚拟环境并安装依赖。"
 Assert-File -Path $Caddy -Hint "请将 caddy.exe 放入 E:\bishe\mobile-tools。"
@@ -214,7 +236,7 @@ try {
         while ((Get-Date) -lt $deadline -and -not $tunnelUrl) {
             $logText = ""
             foreach ($logName in @("cloudflared.out.log", "cloudflared.err.log")) {
-                $logPath = Join-Path $RuntimeRoot $logName
+                $logPath = Join-Path $RunLogDir $logName
                 if (Test-Path -LiteralPath $logPath) {
                     $logText += Get-Content -LiteralPath $logPath -Raw -ErrorAction SilentlyContinue
                 }
@@ -233,7 +255,7 @@ try {
                     break
                 }
                 $lastLine = ($logText -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -Last 1)
-                throw "cloudflared 已退出：$lastLine"
+                throw "cloudflared 已退出：$lastLine。日志：$RunLogDir"
             }
             Start-Sleep -Milliseconds 700
         }
@@ -266,8 +288,17 @@ try {
             }
         }
         catch {
+            $tunnelProcess.Refresh()
+            if ($tunnelProcess.HasExited) { throw "隧道进程已退出。请查看 $RunLogDir" }
+            $tunnelErrors = Get-Content -LiteralPath (Join-Path $RunLogDir 'cloudflared.err.log') -Tail 25 -ErrorAction SilentlyContinue
+            if ($tunnelErrors -match 'Unauthorized: Tunnel not found') {
+                throw "Cloudflare 已拒绝该临时隧道，请稍后重新启动。日志：$RunLogDir"
+            }
             Start-Sleep -Seconds 2
         }
+    }
+    if (-not $publicReady) {
+        throw "公网 /api/health 未通过验证；手机端尚不可用。请检查网络与日志：$RunLogDir"
     }
 
     Write-Host ""
@@ -275,12 +306,9 @@ try {
     Write-Host "手机和电脑统一使用：$tunnelUrl" -ForegroundColor Cyan
     Write-Host "健康检查：$tunnelUrl/api/health"
     Write-Host "当前网址已保存到：$UrlFile"
-    Write-Host "运行日志目录：$RuntimeRoot"
+    Write-Host "本次运行日志：$RunLogDir"
     Write-Host "停止服务：双击项目根目录的 关闭手机HTTPS.bat"
     Write-Host "提示：临时网址会在下次重新启动时变化；测试期间电脑不能休眠。"
-    if (-not $publicReady) {
-        Write-Host "公网健康检查暂未响应，但本地服务与隧道进程已经启动；请稍等片刻后刷新。" -ForegroundColor Yellow
-    }
 }
 catch {
     Write-Host "启动失败：$($_.Exception.Message)" -ForegroundColor Red

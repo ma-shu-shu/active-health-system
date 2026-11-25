@@ -31,7 +31,7 @@ Set-Location ..
 
 ## 电脑端开发
 
-在项目根目录打开三个 PowerShell 窗口，依次运行：
+双击项目根目录的 `启动电脑端.bat` 可启动本地网页、后端和姿态服务；访问 `http://127.0.0.1:5173`。结束后双击 `关闭电脑端.bat`。也可以在项目根目录打开三个 PowerShell 窗口，依次运行：
 
 ```powershell
 # 窗口 1：RTMPose
@@ -60,9 +60,9 @@ npm run dev
 
 将 Windows 64 位的 `caddy.exe` 和 `cloudflared.exe` 放在项目上一级的 `mobile-tools/` 目录。例如本机路径是 `E:\bishe\mobile-tools\`。
 
-双击项目根目录的 `启动手机HTTPS.bat`。脚本会构建网页、启动 RTMPose、Caddy、Cloudflare 隧道与 FastAPI，最后显示本次手机 HTTPS 地址。电脑和手机均使用这个地址。测试结束、视频处理完成后，双击 `关闭手机HTTPS.bat`。
+双击项目根目录的 `启动手机HTTPS.bat`。它会同时启动电脑和手机所需服务：构建网页、启动 RTMPose、Caddy、Cloudflare 隧道与 FastAPI，并在公网健康检查通过后显示本次 HTTPS 地址。电脑和手机均使用这个地址。测试结束、视频处理完成后，双击 `关闭手机HTTPS.bat`。电脑端本地模式与手机 HTTPS 模式会使用相同的后端端口，请一次只启动一种模式。
 
-临时网址在重新启动时可能变化；测试期间电脑必须开机、联网且不能休眠。网址与日志位于 `runtime_logs/mobile_https/`。若端口 8000、8101 或 8080 已占用，请先在原窗口停止旧服务。不要直接双击 `.ps1`。
+临时网址在重新启动时可能变化；测试期间电脑必须开机、联网且不能休眠。网址与日志位于 `runtime_logs/mobile_https/`。手机 Safari 请打开本次启动显示的新网址；旧主屏幕图标可能指向失效的隧道。若端口 8000、8101 或 8080 已占用，请先在原窗口停止旧服务。不要直接双击 `.ps1`。
 
 ## 本地数据
 
