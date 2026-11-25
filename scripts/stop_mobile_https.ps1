@@ -3,6 +3,7 @@ $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $RuntimeRoot = Join-Path $ProjectRoot "runtime_logs\mobile_https"
 $StateFile = Join-Path $RuntimeRoot "services.json"
 $UrlFile = Join-Path $RuntimeRoot "current_url.txt"
+$Python = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
 
 Write-Host "=== 主动健康系统：关闭手机 HTTPS 服务 ===" -ForegroundColor Cyan
 
@@ -30,6 +31,16 @@ foreach ($item in $items) {
     if ($actualTicks -ne [long]$item.start_time_utc_ticks) {
         Write-Host "$($item.name)：PID 已被其他进程复用，已跳过" -ForegroundColor Yellow
         continue
+    }
+    if ($item.name -in @('RTMPose', 'FastAPI')) {
+        $port = if ($item.name -eq 'RTMPose') { 8101 } else { 8000 }
+        $children = Get-CimInstance Win32_Process -Filter "ParentProcessId = $($item.id)" -ErrorAction SilentlyContinue
+        foreach ($child in $children) {
+            if ($child.Name -eq 'python.exe' -and $child.CommandLine -like "*$Python*" -and
+                $child.CommandLine -match "--port\s+$port(?:\s|$)") {
+                Stop-Process -Id $child.ProcessId -Force -ErrorAction SilentlyContinue
+            }
+        }
     }
     Stop-Process -Id $process.Id -Force
     Write-Host "$($item.name)：已关闭" -ForegroundColor Green

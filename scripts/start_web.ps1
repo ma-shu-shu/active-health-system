@@ -52,6 +52,32 @@ function Save-PortOwner {
     }
 }
 
+$mobileStateFile = Join-Path $Root 'runtime_logs\mobile_https\services.json'
+if (Test-Path -LiteralPath $mobileStateFile) {
+    try {
+        $mobileState = Get-Content -LiteralPath $mobileStateFile -Raw | ConvertFrom-Json
+        $mobileProcesses = @($mobileState.processes | Where-Object {
+            $candidate = Get-Process -Id $_.id -ErrorAction SilentlyContinue
+            $candidate -and $candidate.StartTime.ToUniversalTime().Ticks -eq [long]$_.start_time_utc_ticks
+        })
+        if ($mobileProcesses.Count -eq 4 -and $mobileState.tunnel_url -and
+            (Test-HttpReady 'http://127.0.0.1:8101/estimator') -and
+            (Test-HttpReady 'http://127.0.0.1:8000/health') -and
+            (Test-HttpReady 'http://127.0.0.1:8080')) {
+            $health = Invoke-RestMethod -Uri "$($mobileState.tunnel_url)/api/health" -TimeoutSec 6
+            if ($health.status -eq 'ok') {
+                Write-Host '手机 HTTPS 模式已运行，电脑可直接使用同一地址：' -ForegroundColor Green
+                Write-Host $mobileState.tunnel_url -ForegroundColor Cyan
+                if (-not $NoBrowser) { Start-Process $mobileState.tunnel_url }
+                exit 0
+            }
+        }
+    }
+    catch {
+        Write-Host '手机 HTTPS 运行记录存在，但公网地址不可用。' -ForegroundColor Yellow
+    }
+}
+
 foreach ($port in @(8101, 8000, 5173)) {
     $owner = Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue |
         Select-Object -First 1 -ExpandProperty OwningProcess

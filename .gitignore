@@ -47,6 +47,7 @@ data/**/READY.json
 .DS_Store
 Thumbs.db
 desktop.ini
+~$*
 
 # Build / logs
 *.log

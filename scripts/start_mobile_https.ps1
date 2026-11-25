@@ -99,11 +99,25 @@ function Stop-StartedProcesses {
     $items = @($script:StartedProcesses)
     [array]::Reverse($items)
     foreach ($item in $items) {
-        $process = Get-Process -Id $item.id -ErrorAction SilentlyContinue
-        if ($process -and $process.StartTime.ToUniversalTime().Ticks -eq [long]$item.start_time_utc_ticks) {
-            Stop-Process -Id $item.id -Force -ErrorAction SilentlyContinue
+        Stop-TrackedProcess -Item $item
+    }
+}
+
+function Stop-TrackedProcess {
+    param($Item)
+    $process = Get-Process -Id $Item.id -ErrorAction SilentlyContinue
+    if (-not $process -or $process.StartTime.ToUniversalTime().Ticks -ne [long]$Item.start_time_utc_ticks) { return }
+    if ($Item.name -in @('RTMPose', 'FastAPI')) {
+        $port = if ($Item.name -eq 'RTMPose') { 8101 } else { 8000 }
+        $children = Get-CimInstance Win32_Process -Filter "ParentProcessId = $($Item.id)" -ErrorAction SilentlyContinue
+        foreach ($child in $children) {
+            if ($child.Name -eq 'python.exe' -and $child.CommandLine -like "*$Python*" -and
+                $child.CommandLine -match "--port\s+$port(?:\s|$)") {
+                Stop-Process -Id $child.ProcessId -Force -ErrorAction SilentlyContinue
+            }
         }
     }
+    Stop-Process -Id $Item.id -Force -ErrorAction SilentlyContinue
 }
 
 function Assert-File {
@@ -165,8 +179,9 @@ if ($existing) {
         Write-Host "旧隧道已失效，正在停止上次由本脚本启动的服务..." -ForegroundColor Yellow
         [array]::Reverse($valid)
         foreach ($item in $valid) {
-            Stop-Process -Id $item.id -Force -ErrorAction SilentlyContinue
+            Stop-TrackedProcess -Item $item
         }
+        Start-Sleep -Milliseconds 500
     }
 }
 
