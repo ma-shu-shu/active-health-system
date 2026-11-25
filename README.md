@@ -16,49 +16,28 @@
 
 ## Windows 环境准备
 
-安装 Python、Node.js 和 npm。在项目根目录执行：
+安装 Python 3.13、Node.js 和 npm。先用 `python --version`、`node --version` 和 `npm.cmd --version` 确认命令可用，再在项目根目录打开 PowerShell 执行：
 
 ```powershell
-py -3.13 -m venv .venv
+python -m venv .venv
 & .\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt
 & .\.venv\Scripts\python.exe -m pip install -r ai_services\pose\requirements.txt
 Set-Location frontend
-npm ci
+npm.cmd ci
 Set-Location ..
 ```
 
-如果 `py -3.13` 不可用，可用本机已安装的兼容 Python 创建虚拟环境。首次使用请注册个人账号；固定口令的演示账号默认关闭。
+首次使用请注册个人账号。手机 HTTPS 模式关闭固定口令演示账号；电脑端一键启动脚本会启用本地演示账号。
 
 ## 电脑端开发
 
-双击项目根目录的 `启动电脑端.bat` 可启动本地网页、后端和姿态服务；访问 `http://127.0.0.1:5173`。结束后双击 `关闭电脑端.bat`。也可以在项目根目录打开三个 PowerShell 窗口，依次运行：
+双击项目根目录的 `启动电脑端.bat`，启动本地网页、后端和姿态服务；访问 `http://127.0.0.1:5173`。结束后双击 `关闭电脑端.bat`。如果提示端口被占用，先关闭正在运行的手机 HTTPS 模式或原有服务，再启动电脑端。
 
-```powershell
-# 窗口 1：RTMPose
-Set-Location ai_services\pose
-$env:RTMPOSE_BACKEND = "onnxruntime"
-$env:RTMPOSE_MODE = "balanced"
-$env:RTMPOSE_DEVICE = "cpu"
-& ..\..\.venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8101
-```
-
-```powershell
-# 窗口 2：从项目根目录进入
-Set-Location backend
-& ..\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
-```
-
-```powershell
-# 窗口 3：从项目根目录进入
-Set-Location frontend
-npm run dev
-```
-
-网页：`http://127.0.0.1:5173`；API 健康检查：`http://127.0.0.1:8000/health`。实时摄像头的骨架在浏览器中处理；上传视频的 RTMPose 分析需要姿态服务运行。
+API 健康检查地址为 `http://127.0.0.1:8000/health`。实时摄像头的骨架在浏览器中处理；上传视频的 RTMPose 分析需要姿态服务运行。
 
 ## 手机端 HTTPS 演示
 
-将 Windows 64 位的 `caddy.exe` 和 `cloudflared.exe` 放在项目上一级的 `mobile-tools/` 目录。例如本机路径是 `E:\bishe\mobile-tools\`。
+将 Windows 64 位的 `caddy.exe` 和 `cloudflared.exe` 放在项目上一级的 `mobile-tools/` 目录。本机示例路径为 `E:\bishe\mobile-tools\`。可分别用 `& "E:\bishe\mobile-tools\caddy.exe" version` 和 `& "E:\bishe\mobile-tools\cloudflared.exe" --version` 检查；如果项目不在 `E:\bishe`，请将路径替换为实际路径。
 
 双击项目根目录的 `启动手机HTTPS.bat`。它会同时启动电脑和手机所需服务：构建网页、启动 RTMPose、Caddy、Cloudflare 隧道与 FastAPI，并在公网健康检查通过后显示本次 HTTPS 地址。电脑和手机均使用这个地址。测试结束、视频处理完成后，双击 `关闭手机HTTPS.bat`。电脑端本地模式与手机 HTTPS 模式会使用相同的后端端口，请一次只启动一种模式。
 
@@ -77,7 +56,7 @@ npm run dev
 & .\.venv\Scripts\python.exe -m pip install -r backend\requirements-dev.txt
 & .\.venv\Scripts\python.exe -m pytest backend\tests -q
 Set-Location frontend
-npm run build
+npm.cmd run build
 ```
 
 后端测试使用独立的临时数据库；手机摄像头和网络上传仍需在目标设备上验证。
@@ -86,16 +65,3 @@ npm run build
 
 - [架构](docs/architecture.md) · [API](docs/api.md) · [账号与数据隔离](docs/authentication.md)
 - [姿态数据契约](docs/pose_session.md) · [处方审核](docs/prescription_review.md) · [离线视频验证](docs/offline_demo_quickstart.md)
-
-## 上传到自己的 GitHub
-
-登录 GitHub，点击右上角 `+` → **New repository**，取名如 `active-health-system`，建议先选择 **Private**。不要勾选新建 README、`.gitignore` 或 License。本项目已初始化本地 Git 并暂存了代码。创建空仓库后，在本项目根目录运行：
-
-```powershell
-git status --short
-git commit -m "Initial project release"
-git remote add origin https://github.com/<你的用户名>/active-health-system.git
-git push -u origin main
-```
-
-执行 `git status --short` 后先核对清单中没有数据库、视频、日志、虚拟环境或 `node_modules`，再提交。将 `<你的用户名>` 替换成自己的 GitHub 用户名。首次推送时按提示完成浏览器登录；不要在命令中填写密码。后续更新使用 `git add .`、`git commit -m "修改说明"`、`git push`。
